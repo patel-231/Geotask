@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GeoTask">
+<meta name="theme-color" content="#0a0a0f">
+<title>GeoTask — Location Task Reminder</title>
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Clash+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Google Maps -->
+<script>
+  /* ── PASTE YOUR GOOGLE MAPS API KEY BELOW ── */
+  var GMAPS_KEY = 'YOUR_GOOGLE_MAPS_API_KEY';
+</script>
+<style>
+:root{
+  --bg:#080b10;--s1:#0e1319;--s2:#141b24;--s3:#1c2530;
+  --brd:#1e2a36;--brd2:#243040;
+  --grn:#00e676;--grn2:#00c853;--grn-glow:rgba(0,230,118,.18);
+  --cyn:#18ffff;--org:#ff6d00;--red:#ff1744;--ylw:#ffd600;
+  --txt:#dde8f0;--sub:#6b8294;--dim:#2a3a4a;
+  --r:14px;--mono:'IBM Plex Mono',monospace;--disp:'Clash Display','Syne',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--disp);background:var(--bg);color:var(--txt);display:flex;flex-direction:column}
+
+/* ══ NOISE TEXTURE OVERLAY ══ */
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.025;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ══ TOP BAR ══ */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;
+  background:var(--s1);border-bottom:1px solid var(--brd);
+  flex-shrink:0;gap:10px;flex-wrap:wrap;
+  position:relative;z-index:100;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{
+  width:34px;height:34px;border-radius:9px;
+  background:linear-gradient(135deg,#00c853,#18ffff);
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;box-shadow:0 0 20px rgba(0,230,118,.3);
+  flex-shrink:0;
+}
+.brand-name{font-size:17px;font-weight:700;letter-spacing:-.3px}
+.brand-name span{color:var(--grn)}
+
+.topbar-right{display:flex;align-items:center;gap:8px}
+.status-chip{
+  display:flex;align-items:center;gap:5px;
+  font-family:var(--mono);font-size:9px;
+  padding:4px 10px;border-radius:20px;
+  border:1px solid var(--brd);background:var(--s2);
+  color:var(--sub);white-space:nowrap;
+  transition:all .3s;
+}
+.status-chip .dot{width:5px;height:5px;border-radius:50%;background:var(--dim);transition:all .3s;flex-shrink:0}
+.status-chip.on .dot{background:var(--grn);box-shadow:0 0 6px var(--grn)}
+.status-chip.on{color:var(--grn);border-color:rgba(0,230,118,.25)}
+.status-chip.warn .dot{background:var(--ylw);animation:blink 1s infinite}
+.status-chip.warn{color:var(--ylw);border-color:rgba(255,214,0,.25)}
+.status-chip.err .dot{background:var(--red)}
+.status-chip.err{color:var(--red);border-color:rgba(255,23,68,.25)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.bell-btn{
+  position:relative;background:var(--s2);border:1px solid var(--brd);
+  color:var(--txt);width:34px;height:34px;border-radius:9px;
+  cursor:pointer;font-size:15px;display:flex;align-items:center;
+  justify-content:center;transition:all .2s;flex-shrink:0;
+}
+.bell-btn:hover{border-color:var(--grn);background:var(--s3)}
+.bell-badge{
+  position:absolute;top:-5px;right:-5px;
+  background:var(--red);color:#fff;
+  font-family:var(--mono);font-size:8px;font-weight:700;
+  min-width:16px;height:16px;border-radius:8px;
+  padding:0 3px;border:2px solid var(--bg);
+  display:none;align-items:center;justify-content:center;
+}
+.bell-badge.show{display:flex}
+.bell-btn.ring{animation:bellRing .6s ease}
+@keyframes bellRing{0%,100%{transform:rotate(0)}20%{transform:rotate(-15deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}}
+
+/* ══ MAIN LAYOUT ══ */
+.main{flex:1;display:grid;grid-template-columns:380px 1fr;overflow:hidden}
+@media(max-width:780px){.main{grid-template-columns:1fr;grid-template-rows:auto 1fr}}
+
+/* ══ SIDEBAR ══ */
+.sidebar{
+  background:var(--s1);border-right:1px solid var(--brd);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+
+/* Tab bar */
+.tabs{display:flex;border-bottom:1px solid var(--brd);flex-shrink:0}
+.tab{
+  flex:1;padding:11px 8px;text-align:center;
+  font-size:11px;font-weight:600;letter-spacing:.3px;
+  color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;
+  transition:all .2s;background:none;border-top:none;border-left:none;border-right:none;
+}
+.tab.active{color:var(--grn);border-bottom-color:var(--grn)}
+.tab:hover{color:var(--txt)}
+
+/* GPS strip */
+.gps-strip{
+  padding:10px 14px;background:var(--s2);border-bottom:1px solid var(--brd);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+.gps-icon{font-size:18px;flex-shrink:0}
+.gps-info{flex:1;min-width:0}
+.gps-label{font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--sub);margin-bottom:2px}
+.gps-coords{font-family:var(--mono);font-size:11px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gps-coords.unk{color:var(--dim)}
+.gps-acc{font-family:var(--mono);font-size:8px;color:var(--sub);margin-top:1px}
+.gps-btn{
+  background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.2);
+  color:var(--grn);font-family:var(--mono);font-size:9px;
+  padding:5px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;
+  transition:all .2s;flex-shrink:0;
+}
+.gps-btn:hover{background:rgba(0,230,118,.18)}
+.gps-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Tab panels */
+.tab-content{flex:1;overflow-y:auto;padding:14px}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* Form fields */
+.field-group{margin-bottom:14px}
+.field-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--sub);margin-bottom:6px;display:block}
+.field-input{
+  width:100%;background:var(--bg);border:1px solid var(--brd);
+  border-radius:9px;color:var(--txt);font-family:var(--mono);font-size:12px;
+  padding:9px 12px;outline:none;transition:border-color .2s,box-shadow .2s;
+}
+.field-input:focus{border-color:rgba(0,230,118,.4);box-shadow:0 0 0 3px rgba(0,230,118,.06)}
+.field-input::placeholder{color:var(--dim)}
+textarea.field-input{resize:vertical;min-height:64px;font-family:var(--mono)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Range slider */
+.slider-wrap{display:flex;align-items:center;gap:10px}
+input[type=range]{
+  flex:1;-webkit-appearance:none;height:4px;background:var(--brd);
+  border-radius:2px;border:none;cursor:pointer;outline:none;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--grn);cursor:pointer;box-shadow:0 0 8px rgba(0,230,118,.5);
+}
+.slider-val{
+  font-family:var(--mono);font-size:10px;color:var(--grn);
+  background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.2);
+  padding:3px 9px;border-radius:6px;white-space:nowrap;min-width:54px;text-align:center;
+}
+
+/* Search box */
+.search-box{position:relative;margin-bottom:10px}
+.search-input{padding-left:36px !important}
+.search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none}
+.search-results{
+  position:absolute;top:100%;left:0;right:0;z-index:200;
+  background:var(--s2);border:1px solid var(--brd2);border-radius:9px;
+  margin-top:4px;max-height:200px;overflow-y:auto;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);display:none;
+}
+.search-results.show{display:block}
+.search-item{
+  padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--brd);
+  font-size:12px;transition:background .15s;
+}
+.search-item:last-child{border-bottom:none}
+.search-item:hover{background:var(--s3)}
+.search-item-main{font-weight:600;margin-bottom:2px}
+.search-item-sub{font-family:var(--mono);font-size:10px;color:var(--sub)}
+
+/* Buttons */
+.btn{
+  font-family:var(--disp);font-weight:600;font-size:12px;
+  padding:9px 16px;border-radius:9px;border:none;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;
+  transition:all .2s;white-space:nowrap;
+}
+.btn-primary{background:var(--grn);color:#000}
+.btn-primary:hover{background:var(--grn2);box-shadow:0 0 20px rgba(0,230,118,.3);transform:translateY(-1px)}
+.btn-ghost{background:var(--s3);color:var(--txt);border:1px solid var(--brd)}
+.btn-ghost:hover{border-color:var(--sub)}
+.btn-danger{background:rgba(255,23,68,.1);color:var(--red);border:1px solid rgba(255,23,68,.2)}
+.btn-danger:hover{background:rgba(255,23,68,.18)}
+.btn-cyan{background:rgba(24,255,255,.08);color:var(--cyn);border:1px solid rgba(24,255,255,.18)}
+.btn-cyan:hover{background:rgba(24,255,255,.14)}
+.btn-sm{font-size:10px;padding:4px 9px;border-radius:6px}
+.btn-full{width:100%;justify-content:center}
+.form-actions{display:flex;gap:8px;margin-top:4px}
+
+/* Task list in sidebar */
+.task-list{display:flex;flex-direction:column;gap:8px}
+.task-empty{text-align:center;padding:40px 16px;color:var(--dim)}
+.task-empty-ico{font-size:36px;margin-bottom:10px;opacity:.4}
+.task-empty-t{font-size:14px;font-weight:600;margin-bottom:5px;color:var(--sub)}
+.task-empty-s{font-family:var(--mono);font-size:10px;color:var(--dim)}
+
+.task-card{
+  background:var(--s2);border:1px solid var(--brd);border-radius:11px;
+  padding:11px 12px;transition:border-color .3s,box-shadow .3s;
+  animation:cardIn .25s ease;cursor:pointer;
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.task-card:hover{border-color:var(--brd2)}
+.task-card.active-card{border-color:rgba(0,230,118,.25);box-shadow:0 0 14px rgba(0,230,118,.05)}
+.task-card.inactive-card{opacity:.5}
+.task-card.triggered{animation:cardTrig .7s ease;border-color:var(--grn)!important}
+@keyframes cardTrig{0%{box-shadow:0 0 0 0 rgba(0,230,118,.6)}70%{box-shadow:0 0 0 12px rgba(0,230,118,0)}100%{box-shadow:none}}
+
+.tc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:7px}
+.tc-dot{width:7px;height:7px;border-radius:50%;background:var(--dim);margin-top:5px;flex-shrink:0}
+.active-card .tc-dot{background:var(--grn);box-shadow:0 0 6px var(--grn);animation:blink 2s infinite}
+.tc-title{font-size:13px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-acts{display:flex;gap:4px;flex-shrink:0}
+
+.tc-desc{font-family:var(--mono);font-size:10px;color:var(--sub);line-height:1.4;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tc-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;border:1px solid;white-space:nowrap}
+.chip-green{color:var(--grn);border-color:rgba(0,230,118,.2);background:rgba(0,230,118,.06)}
+.chip-cyan{color:var(--cyn);border-color:rgba(24,255,255,.2);background:rgba(24,255,255,.06)}
+.chip-org{color:var(--org);border-color:rgba(255,109,0,.2);background:rgba(255,109,0,.06)}
+.chip-dim{color:var(--sub);border-color:var(--brd);background:var(--s3)}
+.chip-here{color:#000;background:var(--grn);border-color:var(--grn);font-weight:700}
+
+/* monitoring bar */
+.mon-bar{
+  padding:9px 14px;display:flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:10px;border-top:1px solid var(--brd);
+  flex-shrink:0;
+}
+.mon-bar.live{background:rgba(0,230,118,.04);color:var(--grn)}
+.mon-bar.idle{background:var(--s2);color:var(--sub)}
+.pulse-ring{position:relative;width:10px;height:10px;flex-shrink:0}
+.pulse-ring::before,.pulse-ring::after{content:'';position:absolute;inset:0;border-radius:50%;background:var(--grn)}
+.pulse-ring::after{animation:pring 1.5s ease-out infinite;background:transparent;border:1px solid var(--grn)}
+@keyframes pring{0%{transform:scale(1);opacity:1}100%{transform:scale(2.5);opacity:0}}
+.mon-bar.idle .pulse-ring::before{background:var(--sub)}
+.mon-bar.idle .pulse-ring::after{display:none}
+
+/* ══ MAP PANEL ══ */
+.map-panel{position:relative;background:var(--bg)}
+#map{width:100%;height:100%}
+
+/* Map overlay controls */
+.map-overlay{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  z-index:10;display:flex;gap:8px;pointer-events:none;
+}
+.map-chip{
+  background:rgba(8,11,16,.9);border:1px solid var(--brd2);
+  border-radius:20px;padding:6px 14px;
+  font-family:var(--mono);font-size:10px;color:var(--sub);
+  backdrop-filter:blur(8px);pointer-events:all;cursor:default;
+  display:flex;align-items:center;gap:6px;white-space:nowrap;
+}
+.map-chip.live-chip{color:var(--grn);border-color:rgba(0,230,118,.25)}
+
+.map-fab{
+  position:absolute;bottom:20px;right:20px;z-index:10;
+  background:var(--grn);color:#000;border:none;
+  width:50px;height:50px;border-radius:50%;
+  font-size:22px;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;
+  box-shadow:0 4px 20px rgba(0,230,118,.4);
+  transition:all .2s;
+}
+.map-fab:hover{transform:scale(1.1);box-shadow:0 6px 28px rgba(0,230,118,.5)}
+
+.map-center-btn{
+  position:absolute;bottom:82px;right:20px;z-index:10;
+  background:rgba(8,11,16,.9);border:1px solid var(--brd2);
+  color:var(--txt);width:40px;height:40px;border-radius:10px;
+  font-size:18px;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;
+  backdrop-filter:blur(8px);transition:all .2s;
+}
+.map-center-btn:hover{border-color:var(--grn);color:var(--grn)}
+
+/* ══ ARRIVAL BANNER ══ */
+.arr-banner{
+  position:fixed;top:0;left:0;right:0;z-index:8000;
+  transform:translateY(-110%);transition:transform .5s cubic-bezier(.175,.885,.32,1.275);
+  background:linear-gradient(135deg,#040f08 0%,#061810 50%,#040c12 100%);
+  border-bottom:2px solid var(--grn);
+  box-shadow:0 8px 50px rgba(0,230,118,.3);
+}
+.arr-banner.show{transform:translateY(0)}
+.arr-prog{height:3px;background:var(--brd);overflow:hidden}
+.arr-prog-bar{height:100%;background:linear-gradient(90deg,var(--grn),var(--cyn));transform-origin:left;animation:arrShrink var(--dur,8s) linear forwards}
+@keyframes arrShrink{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.arr-body{max-width:900px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.arr-pulse{
+  width:44px;height:44px;border-radius:50%;flex-shrink:0;
+  background:rgba(0,230,118,.1);border:2px solid var(--grn);
+  display:flex;align-items:center;justify-content:center;font-size:20px;
+  animation:arrPulse 1.2s ease-in-out infinite;
+}
+@keyframes arrPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,230,118,.5)}60%{box-shadow:0 0 0 12px rgba(0,230,118,0)}}
+.arr-text{flex:1;min-width:0}
+.arr-eye{font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:2px;color:var(--grn);margin-bottom:3px}
+.arr-title{font-size:16px;font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arr-desc{font-family:var(--mono);font-size:10px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arr-btns{display:flex;gap:7px;flex-shrink:0}
+.arr-ok{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.3);color:var(--grn);padding:7px 16px;border-radius:7px;font-weight:700;font-size:11px;cursor:pointer;transition:all .2s}
+.arr-ok:hover{background:rgba(0,230,118,.22)}
+.arr-close{background:transparent;border:1px solid var(--brd);color:var(--sub);padding:7px 10px;border-radius:7px;font-size:11px;cursor:pointer;transition:all .2s}
+.arr-close:hover{color:var(--txt);border-color:var(--sub)}
+
+/* ══ NOTIFICATION CENTER DRAWER ══ */
+.nc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);z-index:9000;opacity:0;pointer-events:none;transition:opacity .3s}
+.nc-overlay.open{opacity:1;pointer-events:all}
+.nc-drawer{
+  position:fixed;top:0;right:0;bottom:0;width:360px;max-width:98vw;
+  background:var(--s1);border-left:1px solid var(--brd);z-index:9001;
+  display:flex;flex-direction:column;
+  transform:translateX(105%);transition:transform .35s cubic-bezier(.4,0,.2,1);
+  box-shadow:-20px 0 60px rgba(0,0,0,.6);
+}
+.nc-overlay.open .nc-drawer{transform:translateX(0)}
+.nc-head{padding:16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between;background:var(--s2);flex-shrink:0}
+.nc-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.nc-badge{font-family:var(--mono);font-size:8px;background:var(--red);color:#fff;padding:1px 6px;border-radius:8px;display:none}
+.nc-badge.show{display:inline-flex}
+.nc-hacts{display:flex;gap:6px}
+.nc-btn{background:none;border:1px solid var(--brd);color:var(--sub);padding:3px 8px;border-radius:6px;font-family:var(--mono);font-size:9px;cursor:pointer;transition:all .2s}
+.nc-btn:hover{color:var(--txt);border-color:var(--sub)}
+.nc-close-btn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;padding:0}
+.nc-list{flex:1;overflow-y:auto;padding:12px}
+.nc-empty{text-align:center;padding:40px 16px;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.nc-empty-ico{font-size:34px;margin-bottom:10px;opacity:.35}
+.nc-item{background:var(--s2);border:1px solid var(--brd);border-radius:10px;padding:11px 12px;margin-bottom:8px;display:flex;gap:9px;position:relative;animation:cardIn .25s ease}
+.nc-item.unread{border-color:rgba(0,230,118,.2)}
+.nc-item.unread::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;background:var(--grn);border-radius:0 2px 2px 0}
+.nc-ico{font-size:20px;flex-shrink:0;margin-top:1px}
+.nc-b{flex:1;min-width:0}
+.nc-t{font-size:11px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+.nc-udot{width:5px;height:5px;border-radius:50%;background:var(--grn);flex-shrink:0}
+.nc-d{font-family:var(--mono);font-size:10px;color:var(--sub);line-height:1.4;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.nc-m{font-family:var(--mono);font-size:9px;color:var(--dim);display:flex;gap:8px}
+.nc-del{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;flex-shrink:0;transition:color .2s;margin-top:1px}
+.nc-del:hover{color:var(--red)}
+.nc-foot{padding:12px;border-top:1px solid var(--brd);flex-shrink:0}
+.nc-warn{background:rgba(255,214,0,.05);border:1px solid rgba(255,214,0,.18);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--ylw);line-height:1.5}
+.nc-warn-btn{display:inline-block;margin-top:7px;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,.22);color:var(--ylw);padding:4px 12px;border-radius:5px;font-size:9px;cursor:pointer;font-family:var(--mono);transition:all .2s}
+.nc-warn-btn:hover{background:rgba(255,214,0,.18)}
+
+/* ══ TOASTS ══ */
+.toasts{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:7000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;width:100%;max-width:440px;padding:0 14px}
+.toast{
+  background:var(--s2);border:1px solid var(--brd);border-radius:11px;
+  padding:11px 14px;display:flex;gap:10px;align-items:flex-start;
+  animation:tIn .4s cubic-bezier(.175,.885,.32,1.275);
+  box-shadow:0 12px 40px rgba(0,0,0,.6);pointer-events:all;width:100%;
+}
+.toast.t-ok{border-color:rgba(0,230,118,.3);box-shadow:0 12px 40px rgba(0,0,0,.6),0 0 20px rgba(0,230,118,.08)}
+.toast.t-arr{border-color:rgba(24,255,255,.3);box-shadow:0 12px 40px rgba(0,0,0,.6),0 0 20px rgba(24,255,255,.08)}
+.toast.t-err{border-color:rgba(255,23,68,.3)}
+.toast.t-warn{border-color:rgba(255,214,0,.3)}
+@keyframes tIn{from{opacity:0;transform:translateY(14px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
+.t-ico{font-size:17px;flex-shrink:0;margin-top:1px}
+.t-body{flex:1;min-width:0}
+.t-title{font-size:12px;font-weight:700;margin-bottom:2px}
+.t-msg{font-family:var(--mono);font-size:10px;color:var(--sub);line-height:1.4}
+.t-x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;flex-shrink:0}
+.t-x:hover{color:var(--sub)}
+
+/* ══ CONFIRM MODAL ══ */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(5px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .3s}
+.modal-bg.open{opacity:1;pointer-events:all}
+.modal-box{background:var(--s1);border:1px solid var(--brd2);border-radius:16px;padding:24px;max-width:380px;width:100%;transform:scale(.9);transition:transform .3s cubic-bezier(.175,.885,.32,1.275)}
+.modal-bg.open .modal-box{transform:scale(1)}
+.modal-ico{font-size:36px;margin-bottom:12px}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:7px}
+.modal-body{font-family:var(--mono);font-size:11px;color:var(--sub);line-height:1.6;margin-bottom:18px}
+.modal-acts{display:flex;gap:8px;justify-content:flex-end}
+
+/* ══ PWA INSTALL PROMPT ══ */
+.pwa-banner{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:var(--s2);border:1px solid rgba(0,230,118,.25);
+  border-radius:13px;padding:13px 16px;
+  display:flex;align-items:center;gap:12px;
+  max-width:380px;width:calc(100% - 28px);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:6000;
+  animation:tIn .4s ease;
+}
+.pwa-banner.hidden{display:none}
+.pwa-text{flex:1;min-width:0}
+.pwa-title{font-size:12px;font-weight:700;margin-bottom:2px}
+.pwa-sub{font-family:var(--mono);font-size:10px;color:var(--sub)}
+.pwa-acts{display:flex;gap:7px;flex-shrink:0}
+
+/* ══ MISC ══ */
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--brd2);border-radius:3px}
+.hidden{display:none!important}
+.sw-info{padding:8px 14px;background:rgba(24,255,255,.04);border-top:1px solid var(--brd);font-family:var(--mono);font-size:9px;color:var(--sub);flex-shrink:0;text-align:center}
+</style>
+</head>
+<body>
+
+<!-- ARRIVAL BANNER -->
+<div class="arr-banner" id="arrBanner">
+  <div class="arr-prog"><div class="arr-prog-bar" id="arrProgBar"></div></div>
+  <div class="arr-body">
+    <div class="arr-pulse">📍</div>
+    <div class="arr-text">
+      <div class="arr-eye">📡 Geofence triggered — arrived at saved location</div>
+      <div class="arr-title" id="arrTitle">Task</div>
+      <div class="arr-desc" id="arrDesc">Description</div>
+    </div>
+    <div class="arr-btns">
+      <button class="arr-ok" onclick="closeBanner()">✓ Got it</button>
+      <button class="arr-close" onclick="closeBanner()">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIFICATION CENTER -->
+<div class="nc-overlay" id="ncOverlay" onclick="handleNcBg(event)">
+  <div class="nc-drawer">
+    <div class="nc-head">
+      <div class="nc-title">🔔 Notifications <span class="nc-badge" id="ncBadge">0</span></div>
+      <div class="nc-hacts">
+        <button class="nc-btn" onclick="clearNotifs()">Clear all</button>
+        <button class="nc-btn nc-close-btn" onclick="closeNC()">✕</button>
+      </div>
+    </div>
+    <div class="nc-list" id="ncList"></div>
+    <div class="nc-foot" id="ncFoot"></div>
+  </div>
+</div>
+
+<!-- DELETE MODAL -->
+<div class="modal-bg" id="delModal">
+  <div class="modal-box">
+    <div class="modal-ico">🗑️</div>
+    <div class="modal-title">Delete Task?</div>
+    <div class="modal-body" id="delModalBody">This will remove the task and stop monitoring this location.</div>
+    <div class="modal-acts">
+      <button class="btn btn-ghost" onclick="closeModal('delModal')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- PWA INSTALL PROMPT -->
+<div class="pwa-banner hidden" id="pwaBanner">
+  <div class="pwa-text">
+    <div class="pwa-title">📲 Install GeoTask</div>
+    <div class="pwa-sub">Add to Home Screen for real background monitoring</div>
+  </div>
+  <div class="pwa-acts">
+    <button class="btn btn-primary btn-sm" id="pwaInstallBtn" onclick="installPWA()">Install</button>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pwaBanner').classList.add('hidden')">Later</button>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toasts" id="toastsContainer"></div>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">📍</div>
+    <div class="brand-name">Geo<span>Task</span></div>
+  </div>
+  <div class="topbar-right">
+    <div class="status-chip" id="gpsChip"><div class="dot"></div>GPS: Off</div>
+    <div class="status-chip" id="notifChip" onclick="notifChipClick()" style="cursor:pointer"><div class="dot"></div>Notif</div>
+    <div class="status-chip" id="swChip"><div class="dot"></div>BG: Off</div>
+    <button class="bell-btn" id="bellBtn" onclick="openNC()">🔔<span class="bell-badge" id="bellBadge">0</span></button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('add')" id="tab-add">＋ Add Task</button>
+      <button class="tab" onclick="switchTab('tasks')" id="tab-tasks">📋 Tasks <span id="taskTabCount" style="opacity:.6"></span></button>
+    </div>
+
+    <!-- GPS strip -->
+    <div class="gps-strip">
+      <div class="gps-icon">🛰️</div>
+      <div class="gps-info">
+        <div class="gps-label">Current Position</div>
+        <div class="gps-coords unk" id="gpsCoords">Not acquired</div>
+        <div class="gps-acc" id="gpsAcc"></div>
+      </div>
+      <button class="gps-btn" id="gpsBtnMain" onclick="refreshGPS()">⟳ Fix</button>
+    </div>
+
+    <!-- ADD TASK TAB -->
+    <div class="tab-content">
+      <div class="tab-panel active" id="panel-add">
+
+        <!-- Address search -->
+        <div class="field-group">
+          <label class="field-label">🔍 Search Address / Place</label>
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input class="field-input search-input" id="addressSearch" type="text"
+              placeholder="Type an address or place name…"
+              oninput="onSearchInput(this.value)"
+              autocomplete="off">
+            <div class="search-results" id="searchResults"></div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Task Title *</label>
+          <input class="field-input" id="fTitle" type="text" placeholder="e.g. Buy groceries" maxlength="60">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Description</label>
+          <textarea class="field-input" id="fDesc" placeholder="What do you need to do here?"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Trigger Radius</label>
+          <div class="slider-wrap">
+            <input type="range" id="fRadius" min="50" max="5000" step="50" value="200"
+              oninput="onRadiusChange(this.value)">
+            <div class="slider-val" id="radiusVal">200 m</div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Coordinates <span style="color:var(--sub);font-weight:400">(tap map or search)</span></label>
+          <div class="field-row">
+            <div>
+              <input class="field-input" id="fLat" type="number" placeholder="Latitude" step="0.000001"
+                min="-90" max="90" oninput="onCoordsInput()">
+            </div>
+            <div>
+              <input class="field-input" id="fLng" type="number" placeholder="Longitude" step="0.000001"
+                min="-180" max="180" oninput="onCoordsInput()">
+            </div>
+          </div>
+          <div style="margin-top:6px;display:flex;gap:6px">
+            <button class="btn btn-cyan btn-sm" onclick="useMyLocation()" id="useLocBtn">📍 Use My GPS</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearForm()">✕ Clear</button>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary btn-full" onclick="saveTask()">✦ Save Task</button>
+        </div>
+
+      </div><!-- /panel-add -->
+
+      <!-- TASKS TAB -->
+      <div class="tab-panel" id="panel-tasks">
+        <div class="task-list" id="taskList">
+          <div class="task-empty" id="taskEmpty">
+            <div class="task-empty-ico">🗺️</div>
+            <div class="task-empty-t">No tasks yet</div>
+            <div class="task-empty-s">Add location tasks using the Add tab. You'll get notified when you arrive.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-content -->
+
+    <!-- Monitoring bar -->
+    <div class="mon-bar idle" id="monBar"><div class="pulse-ring"></div><span id="monTxt">Monitoring inactive</span></div>
+
+    <!-- SW info -->
+    <div class="sw-info" id="swInfo">🔄 Service Worker: checking…</div>
+  </div><!-- /sidebar -->
+
+  <!-- MAP -->
+  <div class="map-panel">
+    <div id="map"></div>
+    <div class="map-overlay">
+      <div class="map-chip" id="mapChip">🗺️ Tap map to place pin</div>
+      <div class="map-chip live-chip hidden" id="mapLiveChip">📡 Live</div>
+    </div>
+    <button class="map-center-btn" onclick="centerOnMe()" title="Center on my location">⊕</button>
+    <button class="map-fab" onclick="switchTab('add');document.getElementById('fTitle').focus()" title="Add new task">＋</button>
+  </div>
+
+</div><!-- /main -->
+
+<!-- Google Maps SDK -->
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places&callback=initMap" async defer></script>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   REPLACE THE TWO OCCURRENCES OF YOUR_GOOGLE_MAPS_API_KEY
+   — one in the <script> at top, one in the Maps SDK src above
+   ══════════════════════════════════════════════════════ */
+
+/* ─────────────────────────────
+   STATE
+───────────────────────────── */
+var tasks=[], notifs=[], curLat=null, curLng=null, curAcc=null;
+var delId=null, notifOk=false, unread=0;
+var bannerQueue=[], bannerBusy=false, bannerTimer=null;
+var audioCtx=null, swReg=null, deferredInstall=null;
+
+/* Map objects */
+var map=null, userMarker=null, userCircle=null;
+var pinMarker=null, pinCircle=null;
+var taskMarkers=[], taskCircles=[];
+
+/* ─────────────────────────────
+   INIT
+───────────────────────────── */
+window.addEventListener('load', function(){
+  loadData();
+  registerSW();
+  reqNotif();
+  startGPS();
+  renderTasks();
+  updateUI();
+  renderNC();
+  updateBell();
+  handlePWAInstall();
+  setInterval(function(){ if(curLat!==null) checkFences(); }, 10000);
+  setTimeout(function(){ if(curLat===null) toast('i','📡 GPS needed','Tap ⟳ Fix to get your current location.'); }, 2500);
+});
+
+/* ─────────────────────────────
+   GOOGLE MAPS INIT
+───────────────────────────── */
+function initMap(){
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: { lat: 20, lng: 0 },
+    zoom: 2,
+    mapTypeId: 'roadmap',
+    disableDefaultUI: false,
+    zoomControl: true,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    styles: darkMapStyle()
+  });
+
+  /* Click to place pin */
+  map.addListener('click', function(e){
+    var lat = e.latLng.lat(), lng = e.latLng.lng();
+    placePinAt(lat, lng);
+    document.getElementById('fLat').value = lat.toFixed(7);
+    document.getElementById('fLng').value = lng.toFixed(7);
+    switchTab('add');
+    toast('i','📍 Pin placed', lat.toFixed(5)+', '+lng.toFixed(5));
+  });
+
+  /* Places Autocomplete */
+  initPlaces();
+
+  /* Draw saved tasks */
+  renderMapMarkers();
+}
+
+function initPlaces(){
+  var input = document.getElementById('addressSearch');
+  var service = new google.maps.places.AutocompleteService();
+  var placesService = new google.maps.places.PlacesService(map);
+  var searchTimeout;
+
+  window.onSearchInput = function(val){
+    clearTimeout(searchTimeout);
+    var res = document.getElementById('searchResults');
+    if(!val || val.length < 3){ res.classList.remove('show'); return; }
+    searchTimeout = setTimeout(function(){
+      service.getPlacePredictions({ input: val }, function(predictions, status){
+        if(status !== google.maps.places.PlacesServiceStatus.OK || !predictions){
+          res.classList.remove('show'); return;
+        }
+        res.innerHTML = predictions.slice(0,5).map(function(p){
+          return '<div class="search-item" onclick="selectPlace(\''+p.place_id+'\')">'+
+            '<div class="search-item-main">'+escHtml(p.structured_formatting.main_text||p.description)+'</div>'+
+            '<div class="search-item-sub">'+escHtml(p.structured_formatting.secondary_text||'')+'</div>'+
+          '</div>';
+        }).join('');
+        res.classList.add('show');
+      });
+    }, 350);
+  };
+
+  window.selectPlace = function(placeId){
+    placesService.getDetails({ placeId: placeId, fields: ['geometry','name','formatted_address'] }, function(place, status){
+      if(status !== google.maps.places.PlacesServiceStatus.OK) return;
+      var lat = place.geometry.location.lat();
+      var lng = place.geometry.location.lng();
+      placePinAt(lat, lng);
+      document.getElementById('fLat').value = lat.toFixed(7);
+      document.getElementById('fLng').value = lng.toFixed(7);
+      document.getElementById('addressSearch').value = place.name || place.formatted_address || '';
+      document.getElementById('searchResults').classList.remove('show');
+      map.panTo({ lat: lat, lng: lng });
+      map.setZoom(16);
+      toast('i','📍 Location selected', place.formatted_address || place.name || '');
+    });
+  };
+}
+
+/* ─────────────────────────────
+   MAP HELPERS
+───────────────────────────── */
+function placePinAt(lat, lng){
+  var radius = parseInt(document.getElementById('fRadius').value) || 200;
+  if(pinMarker) pinMarker.setMap(null);
+  if(pinCircle) pinCircle.setMap(null);
+
+  pinMarker = new google.maps.Marker({
+    position: { lat: lat, lng: lng },
+    map: map,
+    title: 'New task location',
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 10,
+      fillColor: '#00e676',
+      fillOpacity: 1,
+      strokeColor: '#000',
+      strokeWeight: 2
+    },
+    animation: google.maps.Animation.DROP
+  });
+
+  pinCircle = new google.maps.Circle({
+    strokeColor: '#00e676',
+    strokeOpacity: 0.5,
+    strokeWeight: 1.5,
+    fillColor: '#00e676',
+    fillOpacity: 0.08,
+    map: map,
+    center: { lat: lat, lng: lng },
+    radius: radius
+  });
+}
+
+function onCoordsInput(){
+  var lat = parseFloat(document.getElementById('fLat').value);
+  var lng = parseFloat(document.getElementById('fLng').value);
+  if(!isNaN(lat) && !isNaN(lng) && lat>=-90 && lat<=90 && lng>=-180 && lng<=180){
+    placePinAt(lat, lng);
+    if(map) map.panTo({ lat: lat, lng: lng });
+  }
+}
+
+function onRadiusChange(val){
+  document.getElementById('radiusVal').textContent = val >= 1000 ? (val/1000).toFixed(1)+' km' : val+' m';
+  if(pinCircle){
+    pinCircle.setRadius(parseInt(val));
+  }
+}
+
+function renderMapMarkers(){
+  taskMarkers.forEach(function(m){ m.setMap(null); });
+  taskCircles.forEach(function(c){ c.setMap(null); });
+  taskMarkers = []; taskCircles = [];
+  if(!map) return;
+
+  tasks.forEach(function(t){
+    if(!t.active) return;
+    var marker = new google.maps.Marker({
+      position: { lat: t.lat, lng: t.lng },
+      map: map,
+      title: t.title,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: '#00e676',
+        fillOpacity: 0.9,
+        strokeColor: '#000',
+        strokeWeight: 2
+      }
+    });
+
+    var circle = new google.maps.Circle({
+      strokeColor: '#00e676',
+      strokeOpacity: 0.4,
+      strokeWeight: 1,
+      fillColor: '#00e676',
+      fillOpacity: 0.06,
+      map: map,
+      center: { lat: t.lat, lng: t.lng },
+      radius: t.radius
+    });
+
+    var infoWindow = new google.maps.InfoWindow({
+      content: '<div style="font-family:sans-serif;padding:4px 6px;color:#000;max-width:200px">'+
+        '<strong>'+escHtml(t.title)+'</strong>'+
+        (t.desc ? '<br><span style="font-size:12px">'+escHtml(t.desc)+'</span>' : '')+
+        '<br><span style="font-size:11px;color:#555">Radius: '+t.radius+'m</span>'+
+      '</div>'
+    });
+    marker.addListener('click', function(){ infoWindow.open(map, marker); });
+    taskMarkers.push(marker);
+    taskCircles.push(circle);
+  });
+}
+
+function centerOnMe(){
+  if(curLat !== null && map){
+    map.panTo({ lat: curLat, lng: curLng });
+    map.setZoom(16);
+  } else {
+    toast('w','No GPS','Get your location first using ⟳ Fix.');
+  }
+}
+
+/* ─────────────────────────────
+   GPS
+───────────────────────────── */
+function startGPS(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(
+    onGPSSuccess,
+    onGPSError,
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 8000 }
+  );
+}
+
+function onGPSSuccess(pos){
+  curLat = pos.coords.latitude;
+  curLng = pos.coords.longitude;
+  curAcc = pos.coords.accuracy;
+  updateGPSUI();
+  checkFences();
+  syncSW();
+  updateUserOnMap();
+}
+
+function onGPSError(e){
+  if(e.code === 1) toast('e','GPS Denied','Allow location in browser settings.');
+}
+
+function refreshGPS(){
+  var btn = document.getElementById('gpsBtnMain');
+  btn.textContent = '⟳ …'; btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    function(p){
+      curLat=p.coords.latitude; curLng=p.coords.longitude; curAcc=p.coords.accuracy;
+      updateGPSUI(); checkFences(); syncSW(); updateUserOnMap();
+      toast('s','📡 GPS updated','±'+Math.round(curAcc)+'m accuracy');
+      btn.textContent='⟳ Fix'; btn.disabled=false;
+    },
+    function(e){ toast('e','GPS Error', e.code===1?'Permission denied.':'Could not get position.'); btn.textContent='⟳ Fix'; btn.disabled=false; },
+    { enableHighAccuracy: true, timeout: 12000 }
+  );
+}
+
+function updateGPSUI(){
+  document.getElementById('gpsCoords').textContent = curLat.toFixed(6)+',  '+curLng.toFixed(6);
+  document.getElementById('gpsCoords').classList.remove('unk');
+  document.getElementById('gpsAcc').textContent = '±'+Math.round(curAcc||0)+'m';
+  setChip('gpsChip', 'on', 'GPS: Active');
+  document.getElementById('mapLiveChip').classList.remove('hidden');
+}
+
+function updateUserOnMap(){
+  if(!map || curLat===null) return;
+  var pos = { lat: curLat, lng: curLng };
+  if(!userMarker){
+    userMarker = new google.maps.Marker({
+      position: pos, map: map, title: 'You are here',
+      icon:{
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 9,
+        fillColor: '#18ffff',
+        fillOpacity: 1,
+        strokeColor: '#000',
+        strokeWeight: 2
+      },
+      zIndex: 999
+    });
+    userCircle = new google.maps.Circle({
+      strokeColor: '#18ffff', strokeOpacity: 0.3, strokeWeight: 1,
+      fillColor: '#18ffff', fillOpacity: 0.06,
+      map: map, center: pos, radius: curAcc || 20
+    });
+    map.panTo(pos); map.setZoom(15);
+  } else {
+    userMarker.setPosition(pos);
+    userCircle.setCenter(pos);
+    userCircle.setRadius(curAcc || 20);
+  }
+}
+
+function useMyLocation(){
+  if(curLat !== null){
+    document.getElementById('fLat').value = curLat.toFixed(7);
+    document.getElementById('fLng').value = curLng.toFixed(7);
+    placePinAt(curLat, curLng);
+    if(map){ map.panTo({lat:curLat,lng:curLng}); map.setZoom(16); }
+    toast('s','📍 Your GPS set','Current position applied.');
+  } else {
+    toast('w','No GPS','Tap ⟳ Fix first to get your location.');
+  }
+}
+
+/* ─────────────────────────────
+   HAVERSINE
+───────────────────────────── */
+function haversine(a,b,c,d){
+  var R=6371000,dL=(c-a)*Math.PI/180,dG=(d-b)*Math.PI/180;
+  var x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dG/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+/* ─────────────────────────────
+   GEOFENCE CHECK
+───────────────────────────── */
+function checkFences(){
+  if(curLat===null) return;
+  var now=Date.now(), dirty=false;
+  tasks.forEach(function(t){
+    if(!t.active) return;
+    var d = haversine(curLat,curLng,t.lat,t.lng);
+    t.dist = Math.round(d);
+    var inside = d<=t.radius, cool = !t.lastN||(now-t.lastN>90000);
+    if(inside&&cool&&!t.inside){ fire(t); t.inside=true; t.lastN=now; dirty=true; }
+    else if(!inside&&t.inside){ t.inside=false; dirty=true; }
+  });
+  if(dirty){ saveData(); renderTasks(); }
+  updateDistances();
+}
+
+/* ─────────────────────────────
+   FIRE ALL NOTIFICATION CHANNELS
+───────────────────────────── */
+function fire(t){
+  var msg = t.desc || 'You are within '+t.radius+'m of "'+t.title+'".';
+
+  if(navigator.vibrate) navigator.vibrate([200,80,200,80,500]);
+  playChime();
+  queueBanner(t, msg);
+  toast('arr','📍 '+t.title, msg, 9000);
+  fireOS(t, msg);
+  addNotif(t, msg);
+
+  var card = document.getElementById('tc-'+t.id);
+  if(card){ card.classList.add('triggered'); setTimeout(function(){ card.classList.remove('triggered'); },900); }
+
+  // Tell SW
+  if(swReg && swReg.active){
+    swReg.active.postMessage({ type: 'SYNC_TASKS', tasks: tasks });
+  }
+}
+
+/* ─────────────────────────────
+   CHANNEL — OS PUSH
+───────────────────────────── */
+function fireOS(t, msg){
+  if(!notifOk || Notification.permission!=='granted') return;
+  try{
+    var n = new Notification('📍 '+t.title, {
+      body: msg,
+      tag: 'gt-'+t.id,
+      requireInteraction: true,
+      vibrate: [200,100,200],
+      icon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📍</text></svg>'
+    });
+    n.onclick = function(){ window.focus(); n.close(); openNC(); };
+  }catch(e){}
+}
+
+/* ─────────────────────────────
+   CHANNEL — ARRIVAL BANNER
+───────────────────────────── */
+function queueBanner(t, msg){
+  bannerQueue.push({t:t,msg:msg});
+  if(!bannerBusy) showNextBanner();
+}
+function showNextBanner(){
+  if(!bannerQueue.length){ bannerBusy=false; return; }
+  bannerBusy=true;
+  var item=bannerQueue.shift(), dur=8;
+  document.getElementById('arrTitle').textContent=item.t.title;
+  document.getElementById('arrDesc').textContent=item.msg;
+  var bar=document.getElementById('arrProgBar');
+  bar.style.animation='none'; bar.offsetHeight;
+  bar.style.setProperty('--dur',dur+'s');
+  bar.style.animation='arrShrink '+dur+'s linear forwards';
+  document.getElementById('arrBanner').classList.add('show');
+  if(bannerTimer) clearTimeout(bannerTimer);
+  bannerTimer=setTimeout(closeBanner, dur*1000);
+}
+function closeBanner(){
+  clearTimeout(bannerTimer);
+  document.getElementById('arrBanner').classList.remove('show');
+  setTimeout(function(){ if(bannerQueue.length) showNextBanner(); else bannerBusy=false; },550);
+}
+
+/* ─────────────────────────────
+   CHANNEL — TOAST
+───────────────────────────── */
+function toast(type,title,msg,dur){
+  dur=dur||4500;
+  var c=document.getElementById('toastsContainer'), el=document.createElement('div');
+  var ic={s:'✅',e:'❌',arr:'📍',w:'⚠️',i:'ℹ️'};
+  var cl={s:'t-ok',e:'t-err',arr:'t-arr',w:'t-warn',i:''};
+  el.className='toast '+(cl[type]||'');
+  el.innerHTML='<div class="t-ico">'+(ic[type]||'ℹ️')+'</div>'+
+    '<div class="t-body"><div class="t-title">'+title+'</div>'+(msg?'<div class="t-msg">'+msg+'</div>':'')+
+    '</div><button class="t-x" onclick="this.closest(\'.toast\').remove()">✕</button>';
+  c.appendChild(el);
+  setTimeout(function(){
+    el.style.opacity='0'; el.style.transform='translateY(12px)'; el.style.transition='all .3s';
+    setTimeout(function(){ if(el.parentNode)el.remove(); },320);
+  },dur);
+}
+
+/* ─────────────────────────────
+   NOTIFICATION CENTER
+───────────────────────────── */
+function addNotif(t,msg){
+  notifs.unshift({id:'n'+Date.now(),title:t.title,desc:msg,time:Date.now(),u:true});
+  if(notifs.length>60) notifs=notifs.slice(0,60);
+  unread++;
+  saveData(); renderNC(); updateBell();
+}
+function openNC(){
+  document.getElementById('ncOverlay').classList.add('open');
+  notifs.forEach(function(n){n.u=false;}); unread=0;
+  saveData(); renderNC(); updateBell();
+}
+function closeNC(){ document.getElementById('ncOverlay').classList.remove('open'); }
+function handleNcBg(e){ if(e.target===document.getElementById('ncOverlay')) closeNC(); }
+function clearNotifs(){ notifs=[]; unread=0; saveData(); renderNC(); updateBell(); toast('s','Cleared','All notifications cleared.'); }
+function delNotif(id){ notifs=notifs.filter(function(n){return n.id!==id;}); saveData(); renderNC(); updateBell(); }
+function updateBell(){
+  var b=document.getElementById('bellBadge'),btn=document.getElementById('bellBtn');
+  if(unread>0){ b.textContent=unread>9?'9+':unread; b.classList.add('show'); btn.classList.add('ring'); setTimeout(function(){btn.classList.remove('ring');},700); }
+  else b.classList.remove('show');
+}
+function renderNC(){
+  var list=document.getElementById('ncList'),cnt=document.getElementById('ncBadge'),foot=document.getElementById('ncFoot');
+  cnt.textContent=notifs.length; cnt.className='nc-badge'+(notifs.length?' show':'');
+  if(!('Notification'in window)) foot.innerHTML='<div class="nc-warn">⚠️ Your browser does not support OS notifications.</div>';
+  else if(Notification.permission==='denied') foot.innerHTML='<div class="nc-warn">🔕 OS notifications blocked. In-app alerts still work.<button class="nc-warn-btn" onclick="reqNotif()">Try re-enable</button></div>';
+  else if(Notification.permission==='default') foot.innerHTML='<div class="nc-warn">Enable OS notifications for alerts even when screen is off.<button class="nc-warn-btn" onclick="reqNotif()">Enable →</button></div>';
+  else foot.innerHTML='';
+  if(!notifs.length){ list.innerHTML='<div class="nc-empty"><div class="nc-empty-ico">🔕</div>No notifications yet.<br>Arrive at a saved location to get alerted.</div>'; return; }
+  list.innerHTML=notifs.map(function(n){
+    return '<div class="nc-item'+(n.u?' unread':'')+'">'+
+      '<div class="nc-ico">📍</div>'+
+      '<div class="nc-b">'+
+        '<div class="nc-t">'+(n.u?'<div class="nc-udot"></div>':'')+escHtml(n.title)+'</div>'+
+        '<div class="nc-d">'+escHtml(n.desc)+'</div>'+
+        '<div class="nc-m"><span>📡 Geofence triggered</span><span>'+timeAgo(n.time)+'</span></div>'+
+      '</div>'+
+      '<button class="nc-del" onclick="delNotif(\''+n.id+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+}
+function timeAgo(ts){
+  var s=Math.floor((Date.now()-ts)/1000);
+  if(s<60) return 'just now'; if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago';
+}
+
+/* ─────────────────────────────
+   NOTIFICATION PERMISSION
+───────────────────────────── */
+async function reqNotif(){
+  if(!('Notification'in window)){ updateUI(); return; }
+  if(Notification.permission==='granted'){ notifOk=true; updateUI(); return; }
+  if(Notification.permission!=='denied'){
+    var r=await Notification.requestPermission();
+    notifOk=(r==='granted'); updateUI();
+    if(notifOk) toast('s','🔔 Notifications On','OS alerts will fire on geofence trigger.');
+    else toast('w','Notifications blocked','In-app banner + sound will still work.');
+  }
+  updateUI();
+}
+function notifChipClick(){ if(Notification.permission!=='granted') reqNotif(); else openNC(); }
+
+/* ─────────────────────────────
+   SOUND
+───────────────────────────── */
+function playChime(){
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') audioCtx.resume();
+    var ctx=audioCtx,now=ctx.currentTime;
+    [[523.25,0],[659.25,.13],[783.99,.26],[1046.5,.42]].forEach(function(note){
+      var o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);
+      o.frequency.value=note[0];o.type='sine';
+      g.gain.setValueAtTime(0,now+note[1]);
+      g.gain.linearRampToValueAtTime(.15,now+note[1]+.025);
+      g.gain.exponentialRampToValueAtTime(.001,now+note[1]+.55);
+      o.start(now+note[1]);o.stop(now+note[1]+.6);
+    });
+  }catch(e){}
+}
+
+/* ─────────────────────────────
+   TASK CRUD
+───────────────────────────── */
+function saveTask(){
+  var title=document.getElementById('fTitle').value.trim();
+  var desc=document.getElementById('fDesc').value.trim();
+  var lat=parseFloat(document.getElementById('fLat').value);
+  var lng=parseFloat(document.getElementById('fLng').value);
+  var radius=parseInt(document.getElementById('fRadius').value);
+  if(!title){ shakeEl('fTitle'); toast('e','Missing title','Enter a task title.'); return; }
+  if(isNaN(lat)||isNaN(lng)){ shakeEl('fLat'); shakeEl('fLng'); toast('e','Missing location','Search an address, tap the map, or use GPS.'); return; }
+  if(lat<-90||lat>90||lng<-180||lng>180){ toast('e','Invalid coords','Lat: -90↔90  Lng: -180↔180'); return; }
+  var t={id:uid(),title:title,desc:desc,lat:lat,lng:lng,radius:radius,active:true,created:Date.now(),lastN:null,inside:false,dist:null};
+  tasks.unshift(t);
+  saveData(); renderTasks(); renderMapMarkers(); updateUI(); clearForm();
+  toast('s','✦ Task saved','"'+title+'" — radius: '+radius+'m');
+  if(curLat!==null) checkFences();
+  switchTab('tasks');
+  syncSW();
+
+  /* Remove draft pin */
+  if(pinMarker){ pinMarker.setMap(null); pinMarker=null; }
+  if(pinCircle){ pinCircle.setMap(null); pinCircle=null; }
+}
+
+function deleteTask(id){
+  delId=id;
+  var t=tasks.find(function(x){return x.id===id;});
+  document.getElementById('delModalBody').textContent=(t?'Delete "'+t.title+'"?':'Delete this task?')+' Monitoring will stop.';
+  document.getElementById('delModal').classList.add('open');
+}
+function confirmDelete(){
+  tasks=tasks.filter(function(t){return t.id!==delId;});
+  saveData(); renderTasks(); renderMapMarkers(); updateUI();
+  closeModal('delModal'); toast('s','Deleted','Task removed.');
+  syncSW();
+}
+function closeModal(id){ document.getElementById(id).classList.remove('open'); delId=null; }
+
+function toggleActive(id){
+  var t=tasks.find(function(x){return x.id===id;});if(!t) return;
+  t.active=!t.active; if(!t.active){t.inside=false;t.lastN=null;}
+  saveData(); renderTasks(); renderMapMarkers(); updateUI();
+  toast('s',t.active?'▶ Active':'⏸ Paused','"'+t.title+'"');
+  syncSW();
+}
+
+function simArrive(id){
+  var t=tasks.find(function(x){return x.id===id;});if(!t) return;
+  t.lastN=null; t.inside=false; fire(t); t.inside=true; t.lastN=Date.now();
+  saveData(); renderTasks();
+}
+
+/* ─────────────────────────────
+   RENDER
+───────────────────────────── */
+function renderTasks(){
+  var list=document.getElementById('taskList'),empty=document.getElementById('taskEmpty');
+  document.getElementById('taskTabCount').textContent=tasks.length?'('+tasks.length+')':'';
+  if(!tasks.length){ list.innerHTML=''; list.appendChild(empty); empty.style.display='block'; return; }
+  empty.style.display='none'; list.innerHTML='';
+  tasks.forEach(function(t){
+    var card=document.createElement('div');
+    card.id='tc-'+t.id;
+    card.className='task-card '+(t.active?'active-card':'inactive-card');
+    var dist='--';
+    if(curLat!==null){
+      var d=haversine(curLat,curLng,t.lat,t.lng);
+      dist=d<1000?Math.round(d)+'m':(d/1000).toFixed(1)+'km';
+    }
+    var dt=new Date(t.created).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    card.innerHTML=
+      '<div class="tc-head">'+
+        '<div class="tc-dot"></div>'+
+        '<div class="tc-title">'+escHtml(t.title)+'</div>'+
+        '<div class="tc-acts">'+
+          '<button class="btn btn-ghost btn-sm" onclick="toggleActive(\''+t.id+'\')" title="'+(t.active?'Pause':'Resume')+'">'+(t.active?'⏸':'▶')+'</button>'+
+          '<button class="btn btn-cyan btn-sm" onclick="simArrive(\''+t.id+'\')" title="Test all notification channels">🧪</button>'+
+          '<button class="btn btn-danger btn-sm" onclick="deleteTask(\''+t.id+'\')" title="Delete">🗑</button>'+
+        '</div>'+
+      '</div>'+
+      (t.desc?'<div class="tc-desc">'+escHtml(t.desc)+'</div>':'')+
+      '<div class="tc-meta">'+
+        '<span class="chip chip-cyan">'+t.lat.toFixed(4)+', '+t.lng.toFixed(4)+'</span>'+
+        '<span class="chip chip-org">⊙ '+(t.radius>=1000?(t.radius/1000).toFixed(1)+'km':t.radius+'m')+'</span>'+
+        '<span class="chip chip-dim" id="dist-'+t.id+'">'+dist+' away</span>'+
+        '<span class="chip chip-dim">'+dt+'</span>'+
+      '</div>';
+    list.appendChild(card);
+  });
+}
+
+function updateDistances(){
+  tasks.forEach(function(t){
+    var el=document.getElementById('dist-'+t.id);if(!el) return;
+    if(curLat===null){el.textContent='-- away';el.className='chip chip-dim';return;}
+    var d=haversine(curLat,curLng,t.lat,t.lng);
+    var lbl=d<1000?Math.round(d)+'m away':(d/1000).toFixed(1)+'km away';
+    if(d<=t.radius){el.textContent='✓ HERE';el.className='chip chip-here';}
+    else if(d<=t.radius*2){el.textContent=lbl;el.className='chip chip-green';}
+    else{el.textContent=lbl;el.className='chip chip-dim';}
+  });
+}
+
+function updateUI(){
+  var act=tasks.filter(function(t){return t.active;}).length;
+  if(notifOk||Notification.permission==='granted') setChip('notifChip','on','Notifs: On');
+  else if(Notification.permission==='denied') setChip('notifChip','err','Notifs: Blocked');
+  else setChip('notifChip','warn','Notifs: Tap');
+  var mon=document.getElementById('monBar'),monTxt=document.getElementById('monTxt');
+  if(act>0){ mon.className='mon-bar live'; monTxt.textContent='Monitoring '+act+' location'+(act!==1?'s':''); }
+  else{ mon.className='mon-bar idle'; monTxt.textContent=tasks.length?'All tasks paused':'No tasks — add one'; }
+}
+
+function setChip(id,state,text){
+  var el=document.getElementById(id);
+  el.className='status-chip'+(state?' '+state:'');
+  el.innerHTML='<div class="dot"></div>'+text;
+}
+
+/* ─────────────────────────────
+   TABS
+───────────────────────────── */
+function switchTab(name){
+  ['add','tasks'].forEach(function(t){
+    document.getElementById('panel-'+t).classList.toggle('active',t===name);
+    document.getElementById('tab-'+t).classList.toggle('active',t===name);
+  });
+}
+
+/* ─────────────────────────────
+   SERVICE WORKER
+───────────────────────────── */
+function registerSW(){
+  if(!('serviceWorker' in navigator)){ updateSWInfo('❌ Service Worker not supported in this browser'); return; }
+  navigator.serviceWorker.register('./sw.js')
+    .then(function(reg){
+      swReg=reg;
+      setChip('swChip','on','BG: Active');
+      updateSWInfo('✅ Background monitoring active — notifications work when screen is off');
+      toast('s','🔄 Background Active','Service Worker registered. Geofences monitored in background.');
+      syncSW();
+
+      /* Try Periodic Background Sync */
+      if('periodicSync' in reg){
+        reg.periodicSync.register('geofence-check',{minInterval:30000}).catch(function(){});
+      }
+    })
+    .catch(function(err){
+      setChip('swChip','err','BG: Failed');
+      updateSWInfo('⚠️ Service Worker failed: '+err.message+' — run from a local server or HTTPS, not file://');
+      toast('w','Background limited','SW needs HTTPS or localhost. Open via local server in SPCK.');
+    });
+}
+
+function syncSW(){
+  if(swReg && swReg.active){
+    swReg.active.postMessage({ type:'SYNC_TASKS', tasks:tasks });
+    if(curLat!==null) swReg.active.postMessage({ type:'STORE_POS', lat:curLat, lng:curLng });
+  }
+}
+
+function updateSWInfo(msg){
+  document.getElementById('swInfo').textContent=msg;
+}
+
+/* ─────────────────────────────
+   PWA INSTALL
+───────────────────────────── */
+function handlePWAInstall(){
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault(); deferredInstall=e;
+    document.getElementById('pwaBanner').classList.remove('hidden');
+  });
+  window.addEventListener('appinstalled', function(){
+    document.getElementById('pwaBanner').classList.add('hidden');
+    toast('s','📲 Installed!','GeoTask added to Home Screen. Background monitoring now fully enabled.');
+  });
+}
+window.installPWA=function(){
+  if(!deferredInstall) return;
+  deferredInstall.prompt();
+  deferredInstall.userChoice.then(function(r){
+    if(r.outcome==='accepted') document.getElementById('pwaBanner').classList.add('hidden');
+    deferredInstall=null;
+  });
+};
+
+/* ─────────────────────────────
+   STORAGE
+───────────────────────────── */
+function loadData(){
+  try{ tasks=JSON.parse(localStorage.getItem('gt6')||'[]'); }catch(e){ tasks=[]; }
+  try{ notifs=JSON.parse(localStorage.getItem('gt6n')||'[]'); }catch(e){ notifs=[]; }
+  unread=notifs.filter(function(n){return n.u;}).length;
+}
+function saveData(){
+  try{ localStorage.setItem('gt6',JSON.stringify(tasks)); }catch(e){}
+  try{ localStorage.setItem('gt6n',JSON.stringify(notifs)); }catch(e){}
+}
+
+/* ─────────────────────────────
+   FORM HELPERS
+───────────────────────────── */
+function clearForm(){
+  ['fTitle','fDesc','fLat','fLng','addressSearch'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('fRadius').value=200; onRadiusChange(200);
+  document.getElementById('searchResults').classList.remove('show');
+}
+function shakeEl(id){
+  var el=document.getElementById(id);
+  el.style.borderColor='var(--red)'; el.style.animation='shake .4s ease';
+  setTimeout(function(){ el.style.borderColor=''; el.style.animation=''; },600);
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).substr(2,5); }
+function escHtml(s){ var d=document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+
+/* ─────────────────────────────
+   MAP STYLE (dark)
+───────────────────────────── */
+function darkMapStyle(){
+  return [
+    {elementType:'geometry',stylers:[{color:'#0e1319'}]},
+    {elementType:'labels.text.stroke',stylers:[{color:'#0e1319'}]},
+    {elementType:'labels.text.fill',stylers:[{color:'#6b8294'}]},
+    {featureType:'road',elementType:'geometry',stylers:[{color:'#1e2a36'}]},
+    {featureType:'road',elementType:'labels.text.fill',stylers:[{color:'#4a6070'}]},
+    {featureType:'water',elementType:'geometry',stylers:[{color:'#060d14'}]},
+    {featureType:'water',elementType:'labels.text.fill',stylers:[{color:'#1e3040'}]},
+    {featureType:'poi',elementType:'geometry',stylers:[{color:'#141b24'}]},
+    {featureType:'poi',elementType:'labels.text.fill',stylers:[{color:'#3a5060'}]},
+    {featureType:'transit',elementType:'geometry',stylers:[{color:'#141b24'}]},
+    {featureType:'administrative',elementType:'geometry.stroke',stylers:[{color:'#1e2a36'}]},
+    {featureType:'administrative.land_parcel',elementType:'labels.text.fill',stylers:[{color:'#3a5060'}]},
+    {featureType:'landscape',elementType:'geometry',stylers:[{color:'#0e1319'}]}
+  ];
+}
+
+/* Modal backdrop close */
+document.getElementById('delModal').addEventListener('click', function(e){ if(e.target===this) closeModal('delModal'); });
+</script>
+</body>
+</html>
